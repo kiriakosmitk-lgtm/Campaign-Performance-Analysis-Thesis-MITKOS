@@ -168,7 +168,9 @@ key_metrics = ['CTR_όλα', 'CPM_κόστος_ανά_1.000_εμφανίσεις
 descriptive_stats = df.groupby('Τύπος_Καμπάνιας')[key_metrics].agg(['mean', 'median', 'std']).round(2)
 top_types = df['Τύπος_Καμπάνιας'].value_counts().head(5).index
 print("\nΠεριγραφικά στατιστικά (top 5 τύποι):")
-print(descriptive_stats.loc[top_types])
+for metric in key_metrics:
+    print(f"\n{metric}:")
+    print(descriptive_stats.loc[top_types, metric])
 
 # Μοντέλο πρόβλεψης - χρησιμοποιώ early indicators
 print("\n--- Μοντέλο Πρόβλεψης ---")
@@ -370,3 +372,4 @@ print("\nΠροτάσεις για νέες καμπάνιες:")
 print(f"  Target CTR: >= {benchmarks['CTR (%)']:.1f}%")
 print(f"  Target CPM: <= {benchmarks['CPM (EUR)']:.2f} EUR")
 print(f"  Target CPC: <= {benchmarks['CPC (EUR)']:.3f} EUR")
+
