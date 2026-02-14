@@ -19,12 +19,7 @@ plt.rcParams['font.family'] = 'DejaVu Sans'
 
 # ΦΟΡΤΩΣΗ & ΚΑΘΑΡΙΣΜΟΣ ΔΕΔΟΜΕΝΩΝ
 
-print("\n" + "="*70)
-print("ΦΟΡΤΩΣΗ ΔΕΔΟΜΕΝΩΝ")
-print("="*70)
-
 df = pd.read_csv("Meta_Data.csv", encoding='UTF-8')
-print(f"✓ Φορτώθηκαν {df.shape[0]} δεδομένα")
 
 # Καθαρισμός
 threshold = 0.4 * len(df)
@@ -88,13 +83,9 @@ preprocessor = ColumnTransformer([
     ('cat', OneHotEncoder(drop='first', sparse_output=False, handle_unknown='ignore'), categorical_features)
 ])
 
-print(f"✓ Train/Test: {len(X_train)}/{len(X_test)}")
+print(f" Train/Test: {len(X_train)}/{len(X_test)}")
 
 # ΕΚΠΑΙΔΕΥΣΗ 3 ΜΟΝΤΕΛΩΝ
-
-print("\n" + "="*70)
-print("ΕΚΠΑΙΔΕΥΣΗ ΜΟΝΤΕΛΩΝ")
-print("="*70)
 
 results = {}
 
@@ -163,22 +154,16 @@ except:
 
 # ΠΙΝΑΚΑΣ ΑΠΟΤΕΛΕΣΜΑΤΩΝ
 
-print("\n" + "="*70)
 print("ΠΙΝΑΚΑΣ ΑΠΟΤΕΛΕΣΜΑΤΩΝ")
-print("="*70 + "\n")
 
 df_results = pd.DataFrame(results).T
 print(df_results.round(2).to_string())
 
 # Καλύτερο μοντέλο
 best_model = df_results['F1-Score'].idxmax()
-print(f"\n🏆 ΚΑΛΥΤΕΡΟ: {best_model} (F1: {df_results.loc[best_model, 'F1-Score']:.2f})")
+print(f"\n ΚΑΛΥΤΕΡΟ: {best_model} (F1: {df_results.loc[best_model, 'F1-Score']:.2f})")
 
 # ΔΙΑΓΡΑΜΜΑ
-
-print("\n" + "="*70)
-print("ΔΗΜΙΟΥΡΓΙΑ ΔΙΑΓΡΑΜΜΑΤΟΣ")
-print("="*70)
 
 fig, ax = plt.subplots(figsize=(12, 6))
 
