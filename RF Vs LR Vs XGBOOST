@@ -1,0 +1,217 @@
+"""
+ΣΥΓΚΡΙΣΗ 3 ΜΟΝΤΕΛΩΝ 
+"""
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score, roc_auc_score
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+import warnings
+warnings.filterwarnings('ignore')
+
+plt.rcParams['font.family'] = 'DejaVu Sans'
+
+# ΦΟΡΤΩΣΗ & ΚΑΘΑΡΙΣΜΟΣ ΔΕΔΟΜΕΝΩΝ
+
+print("\n" + "="*70)
+print("ΦΟΡΤΩΣΗ ΔΕΔΟΜΕΝΩΝ")
+print("="*70)
+
+df = pd.read_csv("Meta_Data.csv", encoding='UTF-8')
+print(f"✓ Φορτώθηκαν {df.shape[0]} δεδομένα")
+
+# Καθαρισμός
+threshold = 0.4 * len(df)
+df = df.dropna(thresh=threshold, axis=1)
+df.fillna(0, inplace=True)
+
+for col in df.columns:
+    if df[col].dtype == 'object':
+        try:
+            df[col] = df[col].str.replace(',', '.').astype(float)
+        except:
+            pass
+
+df.columns = df.columns.str.strip().str.replace(' ', '_').str.replace('(', '').str.replace(')', '')
+
+# ΤΑΞΙΝΟΜΗΣΗ ΚΑΜΠΑΝΙΩΝ
+
+def classify_campaign(name):
+    name_lower = str(name).lower()
+    if 'remarketing' in name_lower: return 'Remarketing'
+    if 'prospect' in name_lower: return 'Prospecting'
+    if 'traffic' in name_lower: return 'Traffic'
+    if 'engagement' in name_lower: return 'Engagement'
+    if any(w in name_lower for w in ['conversion', 'purchase']): return 'Conversions'
+    if any(w in name_lower for w in ['sales', 'christmas']): return 'Seasonal Sales'
+    if 'awareness' in name_lower: return 'Brand Awareness'
+    return 'Catalog Sales'
+
+def classify_success(row):
+    roas = (row.get('Αξία_μετατροπών_από_αγορές', 0) / row.get('Έξοδα_EUR', 1) if row.get('Έξοδα_EUR', 0) > 0 else 0)
+    type_ = row['Τύπος_Καμπάνιας']
+    
+    if type_ == 'Conversions': return int((roas >= 2.0) or (row['Αγορές'] >= 3))
+    elif type_ == 'Remarketing': return int(row['CTR_όλα'] >= 2.0)
+    elif type_ == 'Prospecting': return int(row['Απήχηση'] >= 3000)
+    elif type_ == 'Catalog Sales': return int(row['Αγορές'] >= 2)
+    elif type_ == 'Traffic': return int(row['Κόστος_ανά_κλικ_όλα_EUR'] <= 0.5)
+    return int(row['CTR_όλα'] >= 1.5)
+
+df['Τύπος_Καμπάνιας'] = df['Όνομα_εκστρατείας'].apply(classify_campaign)
+df['Επιτυχία'] = df.apply(classify_success, axis=1)
+
+print(f"Επιτυχείς: {df['Επιτυχία'].sum()}")
+
+# ΠΡΟΕΤΟΙΜΑΣΙΑ
+
+features = ['CTR_όλα', 'CPM_κόστος_ανά_1.000_εμφανίσεις_EUR', 
+            'Κόστος_ανά_κλικ_όλα_EUR', 'Απήχηση', 'Εμφανίσεις', 
+            'Συχνότητα', 'Τύπος_Καμπάνιας']
+
+X = df[features].copy()
+y = df['Επιτυχία']
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=42, stratify=y)
+
+numeric_features = X.select_dtypes(include=['float64', 'int64']).columns.tolist()
+categorical_features = ['Τύπος_Καμπάνιας']
+
+preprocessor = ColumnTransformer([
+    ('num', StandardScaler(), numeric_features),
+    ('cat', OneHotEncoder(drop='first', sparse_output=False, handle_unknown='ignore'), categorical_features)
+])
+
+print(f"✓ Train/Test: {len(X_train)}/{len(X_test)}")
+
+# ΕΚΠΑΙΔΕΥΣΗ 3 ΜΟΝΤΕΛΩΝ
+
+print("\n" + "="*70)
+print("ΕΚΠΑΙΔΕΥΣΗ ΜΟΝΤΕΛΩΝ")
+print("="*70)
+
+results = {}
+
+# RANDOM FOREST
+print("\n1. Random Forest...")
+rf = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', RandomForestClassifier(n_estimators=150, max_depth=15, random_state=42, n_jobs=-1))
+])
+rf.fit(X_train, y_train)
+y_pred_rf = rf.predict(X_test)
+y_proba_rf = rf.predict_proba(X_test)[:, 1]
+
+results['Random Forest'] = {
+    'Accuracy': accuracy_score(y_test, y_pred_rf),
+    'Precision': precision_score(y_test, y_pred_rf, zero_division=0),
+    'Recall': recall_score(y_test, y_pred_rf, zero_division=0),
+    'F1-Score': f1_score(y_test, y_pred_rf, zero_division=0),
+    'AUC-ROC': roc_auc_score(y_test, y_proba_rf)
+}
+print(f"F1: {results['Random Forest']['F1-Score']:.2f}")
+
+# LOGISTIC REGRESSION
+print("\n2. Logistic Regression...")
+lr = Pipeline([
+    ('preprocessor', preprocessor),
+    ('model', LogisticRegression(C=1.0, max_iter=2000, class_weight='balanced', random_state=42, n_jobs=-1))
+])
+lr.fit(X_train, y_train)
+y_pred_lr = lr.predict(X_test)
+y_proba_lr = lr.predict_proba(X_test)[:, 1]
+
+results['Logistic Regression'] = {
+    'Accuracy': accuracy_score(y_test, y_pred_lr),
+    'Precision': precision_score(y_test, y_pred_lr, zero_division=0),
+    'Recall': recall_score(y_test, y_pred_lr, zero_division=0),
+    'F1-Score': f1_score(y_test, y_pred_lr, zero_division=0),
+    'AUC-ROC': roc_auc_score(y_test, y_proba_lr)
+}
+print(f" F1: {results['Logistic Regression']['F1-Score']:.2f}")
+
+# XGBOOST
+try:
+    import xgboost as xgb
+    print("\n3. XGBoost...")
+    
+    X_train_proc = preprocessor.fit_transform(X_train)
+    X_test_proc = preprocessor.transform(X_test)
+    
+    xgb_model = xgb.XGBClassifier(n_estimators=150, max_depth=6, learning_rate=0.05, 
+                                   random_state=42, eval_metric='logloss', use_label_encoder=False)
+    xgb_model.fit(X_train_proc, y_train, verbose=False)
+    y_pred_xgb = xgb_model.predict(X_test_proc)
+    y_proba_xgb = xgb_model.predict_proba(X_test_proc)[:, 1]
+    
+    results['XGBoost'] = {
+        'Accuracy': accuracy_score(y_test, y_pred_xgb),
+        'Precision': precision_score(y_test, y_pred_xgb, zero_division=0),
+        'Recall': recall_score(y_test, y_pred_xgb, zero_division=0),
+        'F1-Score': f1_score(y_test, y_pred_xgb, zero_division=0),
+        'AUC-ROC': roc_auc_score(y_test, y_proba_xgb)
+    }
+    print(f"F1: {results['XGBoost']['F1-Score']:.2f}")
+except:
+    print("\n3. XGBoost... (δεν δουλεύει)")
+
+# ΠΙΝΑΚΑΣ ΑΠΟΤΕΛΕΣΜΑΤΩΝ
+
+print("\n" + "="*70)
+print("ΠΙΝΑΚΑΣ ΑΠΟΤΕΛΕΣΜΑΤΩΝ")
+print("="*70 + "\n")
+
+df_results = pd.DataFrame(results).T
+print(df_results.round(2).to_string())
+
+# Καλύτερο μοντέλο
+best_model = df_results['F1-Score'].idxmax()
+print(f"\n🏆 ΚΑΛΥΤΕΡΟ: {best_model} (F1: {df_results.loc[best_model, 'F1-Score']:.2f})")
+
+# ΔΙΑΓΡΑΜΜΑ
+
+print("\n" + "="*70)
+print("ΔΗΜΙΟΥΡΓΙΑ ΔΙΑΓΡΑΜΜΑΤΟΣ")
+print("="*70)
+
+fig, ax = plt.subplots(figsize=(12, 6))
+
+models = df_results.index.tolist()
+x = np.arange(len(models))
+width = 0.15
+
+colors = ['#2ca02c', '#1f77b4', '#ff7f0e', '#d62728', '#9467bd']
+
+bars1 = ax.bar(x - 2*width, df_results['Accuracy'], width, label='Accuracy', color=colors[0], alpha=0.9)
+bars2 = ax.bar(x - width, df_results['Precision'], width, label='Precision', color=colors[1], alpha=0.9)
+bars3 = ax.bar(x, df_results['Recall'], width, label='Recall', color=colors[2], alpha=0.9)
+bars4 = ax.bar(x + width, df_results['F1-Score'], width, label='F1-Score', color=colors[3], alpha=0.9)
+bars5 = ax.bar(x + 2*width, df_results['AUC-ROC'], width, label='AUC-ROC', color=colors[4], alpha=0.9)
+
+# Προσθήκη τιμών
+all_bars = [bars1, bars2, bars3, bars4, bars5]
+for bars in all_bars:
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
+                f'{height:.2f}', ha='center', va='bottom', fontsize=9, fontweight='bold')
+
+ax.set_ylabel('Score', fontweight='bold', fontsize=12)
+ax.set_xlabel('Μοντέλα', fontweight='bold', fontsize=12)
+ax.set_title('Σύγκριση 3 Μοντέλων Μηχανικής Μάθησης', fontweight='bold', fontsize=14)
+ax.set_xticks(x)
+ax.set_xticklabels(models, fontsize=11)
+ax.legend(fontsize=10, loc='upper right', ncol=5)
+ax.set_ylim([0, 1.05])
+ax.grid(axis='y', alpha=0.3)
+
+plt.tight_layout()
+plt.savefig('comparison.png', dpi=300, bbox_inches='tight')
+print("Διάγραμμα: comparison.png")
+plt.show()
